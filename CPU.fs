@@ -47,7 +47,7 @@ let retrieveGlobalVariable address cpu =
 let popFromStack amount cpu =
     match amount > cpu.cpuStack.Length with
     | true  -> 
-        (None, (cpu, sprintf "(%i) Trying to pop %i items but stack only has %i" cpu.instructionPointer amount cpu.cpuStack.Length) ||> setCPUToErrorState)
+        (None, (cpu, errorMessage "(%i) Trying to pop %i items but stack only has %i" cpu.instructionPointer amount cpu.cpuStack.Length) ||> setCPUToErrorState)
     | false -> 
         let (a,b) = cpu.cpuStack |> List.splitAt amount
         (Some a, { cpu with cpuStack=b })
@@ -106,7 +106,7 @@ let runOpCodeHandlerFunction instruction (instructionParams: int list) cpu =
     let (popped, newCpu) = popFromStack instruction.opPopCount cpu
     let hasCorrectAmountOfParams = instructionParams.Length = instruction.opParamCount
     match (hasCorrectAmountOfParams, popped) with
-    | (false, _)            -> (cpu, sprintf "(%i) Invalid amount of params given for instruction %A" cpu.instructionPointer instruction.opCode) ||> setCPUToErrorState
+    | (false, _)            -> (cpu, errorMessage "(%i) Invalid amount of params given for instruction %A" cpu.instructionPointer instruction.opCode) ||> setCPUToErrorState
     | (_, None)             -> newCpu // Too few in stack, error state
     | (_, Some (x::y::_))   -> instruction.handler (x, y) instructionParams newCpu
     | (_, Some (x::_))      -> instruction.handler (x, 0) instructionParams newCpu
@@ -115,7 +115,8 @@ let runOpCodeHandlerFunction instruction (instructionParams: int list) cpu =
 let runSimpleInstruction operationAndParams cpu =
     let instructionInfo = getInstructionInfoForOpCode operationAndParams.operation
     match instructionInfo with
-    | None -> cpu // error message, instruction not found
+    | None                 -> 
+        (cpu, errorMessage "(%i) Instruction %A not found" cpu.instructionPointer operationAndParams.operation) ||> setCPUToErrorState   // error message, instruction not found
     | Some instructionInfo ->
         (instructionInfo, operationAndParams.opCodeParams, cpu) |||> runOpCodeHandlerFunction
 
