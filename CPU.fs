@@ -135,28 +135,35 @@ let getNewInstruction (code:Code) cpu =
     let cachedInstructions = Map.tryFind nextInstruction code.cache
 
     match (nextInstruction, code, cachedInstructions) with
+    | (_, _, Some (remainingCode, usedCode) ) when remainingCode.Length + usedCode.Length < nextInstruction ->
+        None
+    | (_, _, _) when nextInstruction < 0 ->
+        None
     | (_, _, Some (remainingCode, usedCode) )                                ->
-        { code with remainingOperations = remainingCode ; doneOperations = usedCode }
+        Some { code with remainingOperations = remainingCode ; doneOperations = usedCode }
     | (nextInstruction, code, None) when nextInstruction > remainingLen ->
         let (cut, newInstructions) = code.remainingOperations |> List.splitAt (nextInstruction-remainingLen)
         let doneOperations = (cut@code.doneOperations)
-        { code with remainingOperations = newInstructions ; doneOperations = doneOperations ; cache = Map.add nextInstruction (newInstructions, doneOperations) code.cache }
+        Some { code with remainingOperations = newInstructions ; doneOperations = doneOperations ; cache = Map.add nextInstruction (newInstructions, doneOperations) code.cache }
     | (nextInstruction, code, None) when nextInstruction < remainingLen ->
         let (newInstructions, cut) = code.doneOperations |> List.splitAt (remainingLen-nextInstruction)
         let remainingOperations = newInstructions@code.remainingOperations |> List.rev
-        { code with remainingOperations = remainingOperations ; doneOperations = cut ; cache = Map.add nextInstruction (remainingOperations, cut) code.cache }
+        Some { code with remainingOperations = remainingOperations ; doneOperations = cut ; cache = Map.add nextInstruction (remainingOperations, cut) code.cache }
     | _                                                           ->
-        code
+        Some code
 
 let rec runCPU code cpu = 
     let code = getNewInstruction code cpu
-    match (cpu.faultyState, code.remainingOperations) with
-    | (true, _) ->
-        printf "%s" cpu.errorMessage // Stop execution because CPU is in faulty state
-        cpu
-    | (_, [])   -> cpu
-    | (_, currentInstruction::remainingInstructions) -> 
-        runInstruction currentInstruction cpu |> runCPU { code with remainingOperations = remainingInstructions ; doneOperations = (currentInstruction::code.doneOperations) }
+    match code with
+        | Some code ->
+            match (cpu.faultyState, code.remainingOperations) with
+            | (true, _) ->
+                printf "%s" cpu.errorMessage // Stop execution because CPU is in faulty state
+                cpu
+            | (_, [])   -> cpu
+            | (_, currentInstruction::remainingInstructions) -> 
+                runInstruction currentInstruction cpu |> runCPU { code with remainingOperations = remainingInstructions ; doneOperations = (currentInstruction::code.doneOperations) }
+        | None      -> (cpu, errorMessage "(%i) Invalid instruction pointer location" cpu.instructionPointer) ||> setCPUToErrorState
 
 let getInstructionForLine (line: string) =
     let components = line.Split ' ' |> Seq.toList
